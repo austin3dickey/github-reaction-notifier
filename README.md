@@ -18,7 +18,7 @@ A GitHub Action runs every 15 minutes and:
 2. Generate a new token (classic) with `public_repo` scope
 3. Copy the token for the next step
 
-### 3. Add Repository Secrets
+### 2. Add Repository Secrets
 
 Go to your repo's **Settings → Secrets and variables → Actions** and add:
 
@@ -41,7 +41,7 @@ If using Gmail:
 3. Generate an app password for "Mail"
 4. Use that 16-character password as `SMTP_PASSWORD`
 
-### 4. Test the Workflow
+### 3. Test the Workflow
 
 1. Go to **Actions** tab in your repository
 2. Click **Check Reactions** workflow

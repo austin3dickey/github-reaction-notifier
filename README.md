@@ -25,7 +25,7 @@ Go to your repo's **Settings → Secrets and variables → Actions** and add:
 | Secret | Description | Example |
 |--------|-------------|---------|
 | `GH_PAT` | Personal Access Token from step 2 | `ghp_xxxx...` |
-| `GITHUB_USERNAME` | Your GitHub username | `octocat` |
+| `GH_USERNAME` | Your GitHub username | `octocat` |
 | `SMTP_HOST` | Your email provider's SMTP server | `smtp.gmail.com` |
 | `SMTP_PORT` | SMTP port | `587` |
 | `SMTP_USER` | SMTP username (usually your email) | `you@gmail.com` |

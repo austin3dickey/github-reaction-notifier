@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
-import type { EmailConfig, NewReaction } from "./types.js";
+import type { Comment, EmailConfig, NewReaction } from "./types.js";
 import { REACTION_EMOJI } from "./types.js";
 
 export class EmailNotifier {
@@ -42,7 +42,8 @@ export class EmailNotifier {
     if (reactions.length === 1) {
       const { reaction, comment } = reactions[0];
       const emoji = REACTION_EMOJI[reaction.content];
-      return `${emoji} ${reaction.user.login} reacted to your comment`;
+      const target = this.getReactionTarget(comment);
+      return `${emoji} ${reaction.user.login} reacted to ${target}`;
     }
     return `${reactions.length} new reactions on your GitHub comments`;
   }
@@ -51,12 +52,13 @@ export class EmailNotifier {
     const reactionsHtml = reactions
       .map(({ reaction, comment }) => {
         const emoji = REACTION_EMOJI[reaction.content];
-        const preview = this.truncate(comment.body, 100);
+        const preview = this.truncate(comment.body, 250);
+        const target = this.getReactionTarget(comment);
 
         return `
           <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #e1e4e8; border-radius: 6px;">
             <div style="margin-bottom: 10px;">
-              <strong>${emoji} ${reaction.user.login}</strong> reacted to your comment
+              <strong>${emoji} ${reaction.user.login}</strong> reacted to ${target}
             </div>
             <div style="color: #586069; font-size: 14px; margin-bottom: 10px;">
               "${preview}"
@@ -92,8 +94,9 @@ export class EmailNotifier {
   private buildTextBody(reactions: NewReaction[]): string {
     const lines = reactions.map(({ reaction, comment }) => {
       const emoji = REACTION_EMOJI[reaction.content];
-      const preview = this.truncate(comment.body, 80);
-      return `${emoji} ${reaction.user.login} reacted to: "${preview}"\n   ${comment.html_url}`;
+      const preview = this.truncate(comment.body, 200);
+      const target = this.getReactionTarget(comment);
+      return `${emoji} ${reaction.user.login} reacted to ${target}: "${preview}"\n   ${comment.html_url}`;
     });
 
     return `New Reactions on Your Comments\n\n${lines.join("\n\n")}`;
@@ -103,5 +106,23 @@ export class EmailNotifier {
     const cleaned = text.replace(/\s+/g, " ").trim();
     if (cleaned.length <= maxLength) return cleaned;
     return cleaned.slice(0, maxLength - 3) + "...";
+  }
+
+  private getReactionTarget(comment: Comment): string {
+    switch (comment.commentType) {
+      case "issue_body":
+        return `your issue #${comment.number}`;
+      case "pr_body":
+        return `your PR #${comment.number}`;
+      case "issue_comment":
+      case "pull_request_review":
+        return `your comment on #${comment.number}`;
+      case "discussion":
+        return "your discussion";
+      case "discussion_comment":
+        return "your discussion comment";
+      default:
+        return "your comment";
+    }
   }
 }

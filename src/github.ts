@@ -121,6 +121,7 @@ export class GitHubClient {
         owner,
         repo,
         commentType: "issue_comment",
+        number: e.payload.issue.number,
       };
     }
 
@@ -155,6 +156,7 @@ export class GitHubClient {
         owner,
         repo,
         commentType: "pull_request_review",
+        number: e.payload.pull_request.number,
       };
     }
 

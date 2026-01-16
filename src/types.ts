@@ -30,7 +30,9 @@ export interface Comment {
   // For fetching reactions
   owner: string;
   repo: string;
-  commentType: "issue" | "commit" | "pull_request_review";
+  commentType: "issue_comment" | "commit" | "pull_request_review" | "issue_body" | "pr_body" | "discussion" | "discussion_comment";
+  // For issue/PR body reactions (uses number, not id)
+  number?: number;
 }
 
 export interface SeenReactionsState {
@@ -126,10 +128,53 @@ export interface PullRequestReviewCommentEvent extends GitHubEventBase {
   payload: PullRequestReviewCommentEventPayload;
 }
 
+export interface IssuesEventPayload {
+  action: string;
+  issue: {
+    id: number;
+    number: number;
+    title: string;
+    body: string;
+    html_url: string;
+    created_at: string;
+    user: {
+      login: string;
+    };
+  };
+}
+
+export interface IssuesEvent extends GitHubEventBase {
+  type: "IssuesEvent";
+  payload: IssuesEventPayload;
+}
+
+export interface PullRequestEventPayload {
+  action: string;
+  number: number;
+  pull_request: {
+    id: number;
+    number: number;
+    title: string;
+    body: string;
+    html_url: string;
+    created_at: string;
+    user: {
+      login: string;
+    };
+  };
+}
+
+export interface PullRequestEvent extends GitHubEventBase {
+  type: "PullRequestEvent";
+  payload: PullRequestEventPayload;
+}
+
 export type GitHubEvent =
   | IssueCommentEvent
   | CommitCommentEvent
   | PullRequestReviewCommentEvent
+  | IssuesEvent
+  | PullRequestEvent
   | GitHubEventBase;
 
 export const REACTION_EMOJI: Record<ReactionContent, string> = {

@@ -37,20 +37,35 @@ async function main(): Promise<void> {
   // Load existing state
   await state.load();
 
-  // Fetch recent comments
-  console.log("Fetching recent comments...");
+  // Fetch recent comments from Events API
+  console.log("Fetching recent comments from events...");
   const comments = await github.getRecentComments();
-  console.log(`Found ${comments.length} comments to check`);
+  console.log(`Found ${comments.length} items from events API`);
+
+  // Fetch discussions via GraphQL (includes reactions inline)
+  console.log("Fetching discussions...");
+  const { comments: discussionComments, reactions: discussionReactions } =
+    await github.getDiscussionsWithReactions();
+  console.log(`Found ${discussionComments.length} discussions/comments`);
+
+  // Merge all comments
+  const allComments = [...comments, ...discussionComments];
+  console.log(`Total: ${allComments.length} items to check`);
 
   // Check each comment for new reactions
   const allNewReactions: NewReaction[] = [];
 
-  for (const comment of comments) {
-    const reactions = await github.getReactionsForComment(comment);
+  for (const comment of allComments) {
+    // For discussions, reactions are already fetched; for others, fetch via REST
+    const reactions =
+      comment.commentType === "discussion" || comment.commentType === "discussion_comment"
+        ? discussionReactions.get(comment.id) ?? []
+        : await github.getReactionsForComment(comment);
+
     const newReactions = state.findNewReactions(comment, reactions);
 
     if (newReactions.length > 0) {
-      console.log(`Found ${newReactions.length} new reaction(s) on comment ${comment.id}`);
+      console.log(`Found ${newReactions.length} new reaction(s) on ${comment.commentType} ${comment.id}`);
       allNewReactions.push(...newReactions);
     }
 

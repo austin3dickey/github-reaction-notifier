@@ -139,7 +139,7 @@ export interface IssuesEventPayload {
     created_at: string;
     user: {
       login: string;
-    };
+    } | null;
   };
 }
 
@@ -160,7 +160,7 @@ export interface PullRequestEventPayload {
     created_at: string;
     user: {
       login: string;
-    };
+    } | null;
   };
 }
 

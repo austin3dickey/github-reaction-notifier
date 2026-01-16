@@ -161,7 +161,7 @@ export class GitHubClient {
     if (event.type === "IssuesEvent") {
       const e = event as IssuesEvent;
       if (e.payload.action !== "opened") return null;
-      if (e.payload.issue.user.login !== this.username) return null;
+      if (!e.payload.issue.user || e.payload.issue.user.login !== this.username) return null;
 
       return {
         id: e.payload.issue.id,
@@ -179,7 +179,7 @@ export class GitHubClient {
     if (event.type === "PullRequestEvent") {
       const e = event as PullRequestEvent;
       if (e.payload.action !== "opened") return null;
-      if (e.payload.pull_request.user.login !== this.username) return null;
+      if (!e.payload.pull_request.user || e.payload.pull_request.user.login !== this.username) return null;
 
       return {
         id: e.payload.pull_request.id,

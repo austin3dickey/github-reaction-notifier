@@ -1,9 +1,17 @@
 import { readFile, writeFile } from "fs/promises";
-import { existsSync } from "fs";
 import type { SeenReactionsState, Comment, Reaction, NewReaction } from "./types.js";
 
 const STATE_FILE = "./data/seen-reactions.json";
-const MAX_AGE_DAYS = 30;
+
+function isSeenReactionsState(value: unknown): value is SeenReactionsState {
+  if (typeof value !== "object" || value === null) return false;
+  const { seenReactions } = value as { seenReactions?: unknown };
+  if (typeof seenReactions !== "object" || seenReactions === null) return false;
+  if (Array.isArray(seenReactions)) return false;
+  return Object.values(seenReactions).every(
+    (ids) => Array.isArray(ids) && ids.every((id) => typeof id === "number"),
+  );
+}
 
 export class StateManager {
   private state: SeenReactionsState;
@@ -18,21 +26,34 @@ export class StateManager {
   }
 
   async load(): Promise<void> {
-    if (!existsSync(this.statePath)) {
-      return;
+    let content: string;
+    try {
+      content = await readFile(this.statePath, "utf-8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
     }
 
+    // Starting fresh on a bad file would re-send every reaction, so stop instead.
+    const fixHint = "Fix or restore it from git history, or delete it to accept re-notification.";
+    let parsed: unknown;
     try {
-      const content = await readFile(this.statePath, "utf-8");
-      this.state = JSON.parse(content);
+      parsed = JSON.parse(content);
     } catch (error) {
-      console.error("Failed to load state file, starting fresh:", error);
+      throw new Error(`State file ${this.statePath} is not valid JSON. ${fixHint}`, {
+        cause: error,
+      });
     }
+    if (!isSeenReactionsState(parsed)) {
+      throw new Error(
+        `State file ${this.statePath} must have a seenReactions object of number arrays. ${fixHint}`,
+      );
+    }
+    this.state = parsed;
   }
 
   async save(): Promise<void> {
     this.state.lastUpdated = new Date().toISOString();
-    this.pruneOldEntries();
     await writeFile(this.statePath, JSON.stringify(this.state, null, 2));
   }
 
@@ -61,18 +82,5 @@ export class StateManager {
     const existingIds = this.state.seenReactions[commentKey] ?? [];
     const allIds = new Set([...existingIds, ...reactions.map((r) => r.id)]);
     this.state.seenReactions[commentKey] = Array.from(allIds);
-  }
-
-  private pruneOldEntries(): void {
-    const cutoff = Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
-
-    // We don't have timestamps for individual entries, so we'll keep track
-    // by limiting total entries. Keep most recent 1000 comments.
-    const entries = Object.entries(this.state.seenReactions);
-    if (entries.length > 1000) {
-      // Keep only the last 1000 entries
-      const toKeep = entries.slice(-1000);
-      this.state.seenReactions = Object.fromEntries(toKeep);
-    }
   }
 }

@@ -3,21 +3,34 @@ import type { Transporter } from "nodemailer";
 import type { Comment, EmailConfig, NewReaction } from "./types.js";
 import { REACTION_EMOJI } from "./types.js";
 
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function createSmtpTransport(config: EmailConfig): Transporter {
+  return nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: {
+      user: config.user,
+      pass: config.password,
+    },
+  });
+}
+
 export class EmailNotifier {
   private transporter: Transporter;
   private config: EmailConfig;
 
-  constructor(config: EmailConfig) {
+  constructor(config: EmailConfig, transporter: Transporter = createSmtpTransport(config)) {
     this.config = config;
-    this.transporter = nodemailer.createTransport({
-      host: config.host,
-      port: config.port,
-      secure: config.secure,
-      auth: {
-        user: config.user,
-        pass: config.password,
-      },
-    });
+    this.transporter = transporter;
   }
 
   async sendNotification(newReactions: NewReaction[]): Promise<void> {
@@ -52,18 +65,20 @@ export class EmailNotifier {
     const reactionsHtml = reactions
       .map(({ reaction, comment }) => {
         const emoji = REACTION_EMOJI[reaction.content];
-        const preview = this.truncate(comment.body, 250);
-        const target = this.getReactionTarget(comment);
+        const preview = escapeHtml(this.truncate(comment.body, 250));
+        const login = escapeHtml(reaction.user.login);
+        const target = escapeHtml(this.getReactionTarget(comment));
+        const url = escapeHtml(comment.html_url);
 
         return `
           <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #e1e4e8; border-radius: 6px;">
             <div style="margin-bottom: 10px;">
-              <strong>${emoji} ${reaction.user.login}</strong> reacted to ${target}
+              <strong>${emoji} ${login}</strong> reacted to ${target}
             </div>
             <div style="color: #586069; font-size: 14px; margin-bottom: 10px;">
               "${preview}"
             </div>
-            <a href="${comment.html_url}" style="color: #0366d6; text-decoration: none;">
+            <a href="${url}" style="color: #0366d6; text-decoration: none;">
               View comment →
             </a>
           </div>

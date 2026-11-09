@@ -1,92 +1,42 @@
-import { GitHubClient } from "./github.js";
-import { StateManager } from "./state.js";
-import { EmailNotifier } from "./email.js";
-import type { NewReaction, EmailConfig } from "./types.js";
+import { collectReactions, fetchViewer } from "./github.ts";
+import { renderError, renderMenu } from "./menu.ts";
+import { defaultStatePath, loadState, mergeReactions, saveState } from "./state.ts";
 
-function getRequiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
+const USAGE = "Usage: node src/index.ts [mark-read]";
+
+async function refresh(statePath: string): Promise<string> {
+  const token = process.env["GITHUB_TOKEN"];
+  if (!token) {
+    throw new Error("GITHUB_TOKEN is not set. Run `gh auth login` or export a token.");
   }
-  return value;
+  const viewer = await fetchViewer(token);
+  const state = mergeReactions(await loadState(statePath), collectReactions(viewer));
+  await saveState(statePath, state);
+  const scriptPath = process.argv[1] ?? "";
+  return renderMenu(state, [process.execPath, scriptPath, "mark-read"]);
 }
 
-function getEmailConfig(): EmailConfig {
-  return {
-    host: getRequiredEnv("SMTP_HOST"),
-    port: parseInt(process.env["SMTP_PORT"] ?? "587", 10),
-    secure: process.env["SMTP_SECURE"] === "true",
-    user: getRequiredEnv("SMTP_USER"),
-    password: getRequiredEnv("SMTP_PASSWORD"),
-    from: getRequiredEnv("EMAIL_FROM"),
-    to: getRequiredEnv("EMAIL_TO"),
-  };
+async function markRead(statePath: string): Promise<void> {
+  const state = await loadState(statePath);
+  if (!state) return;
+  await saveState(statePath, { ...state, unread: [] });
 }
 
 async function main(): Promise<void> {
-  console.log("Starting GitHub Reaction Notifier...");
-
-  const githubToken = getRequiredEnv("GITHUB_TOKEN");
-  const githubUsername = getRequiredEnv("GITHUB_USERNAME");
-
-  const github = new GitHubClient(githubToken, githubUsername);
-  const state = new StateManager();
-  const emailConfig = getEmailConfig();
-  const emailNotifier = new EmailNotifier(emailConfig);
-
-  // Load existing state
-  await state.load();
-
-  // Fetch recent comments from Events API
-  console.log("Fetching recent comments from events...");
-  const comments = await github.getRecentComments();
-  console.log(`Found ${comments.length} items from events API`);
-
-  // Fetch discussions via GraphQL (includes reactions inline)
-  console.log("Fetching discussions...");
-  const { comments: discussionComments, reactions: discussionReactions } =
-    await github.getDiscussionsWithReactions();
-  console.log(`Found ${discussionComments.length} discussions/comments`);
-
-  // Merge all comments
-  const allComments = [...comments, ...discussionComments];
-  console.log(`Total: ${allComments.length} items to check`);
-
-  // Check each comment for new reactions
-  const allNewReactions: NewReaction[] = [];
-
-  for (const comment of allComments) {
-    // For discussions, reactions are already fetched; for others, fetch via REST
-    const reactions =
-      comment.commentType === "discussion" || comment.commentType === "discussion_comment"
-        ? discussionReactions.get(comment.id) ?? []
-        : await github.getReactionsForComment(comment);
-
-    const newReactions = state.findNewReactions(comment, reactions);
-
-    if (newReactions.length > 0) {
-      console.log(`Found ${newReactions.length} new reaction(s) on ${comment.commentType} ${comment.id}`);
-      allNewReactions.push(...newReactions);
-    }
-
-    // Mark all reactions as seen (including self-reactions we filtered out)
-    state.markAsSeen(comment, reactions);
-  }
-
-  // Send notification if there are new reactions
-  if (allNewReactions.length > 0) {
-    console.log(`Sending notification for ${allNewReactions.length} new reaction(s)...`);
-    await emailNotifier.sendNotification(allNewReactions);
+  const statePath = defaultStatePath();
+  const command = process.argv[2];
+  if (command === undefined) {
+    process.stdout.write(await refresh(statePath));
+  } else if (command === "mark-read") {
+    await markRead(statePath);
   } else {
-    console.log("No new reactions found");
+    throw new Error(`Unknown command "${command}". ${USAGE}`);
   }
-
-  // Save state
-  await state.save();
-  console.log("State saved. Done!");
 }
 
-main().catch((error) => {
-  console.error("Error:", error);
-  process.exit(1);
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  process.stdout.write(renderError(message));
+  console.error(error);
+  process.exitCode = 1;
 });

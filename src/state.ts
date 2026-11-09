@@ -1,86 +1,76 @@
-import { readFile, writeFile } from "fs/promises";
-import type { SeenReactionsState, Comment, Reaction, NewReaction } from "./types.js";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import type { ReactionItem, State } from "./types.ts";
 
-const STATE_FILE = "./data/seen-reactions.json";
+export function defaultStatePath(): string {
+  const stateHome = process.env["XDG_STATE_HOME"] || join(homedir(), ".local", "state");
+  return join(stateHome, "github-reaction-notifier", "state.json");
+}
 
-function isSeenReactionsState(value: unknown): value is SeenReactionsState {
+function isReactionItem(value: unknown): value is ReactionItem {
   if (typeof value !== "object" || value === null) return false;
-  const { seenReactions } = value as { seenReactions?: unknown };
-  if (typeof seenReactions !== "object" || seenReactions === null) return false;
-  if (Array.isArray(seenReactions)) return false;
-  return Object.values(seenReactions).every(
-    (ids) => Array.isArray(ids) && ids.every((id) => typeof id === "number"),
+  const fields = ["id", "content", "createdAt", "user", "url", "label"] as const;
+  return fields.every((field) => typeof (value as Record<string, unknown>)[field] === "string");
+}
+
+function isState(value: unknown): value is State {
+  if (typeof value !== "object" || value === null) return false;
+  const { seen, unread } = value as { seen?: unknown; unread?: unknown };
+  return (
+    Array.isArray(seen) &&
+    seen.every((id) => typeof id === "string") &&
+    Array.isArray(unread) &&
+    unread.every(isReactionItem)
   );
 }
 
-export class StateManager {
-  private state: SeenReactionsState;
-  private statePath: string;
-
-  constructor(statePath: string = STATE_FILE) {
-    this.statePath = statePath;
-    this.state = {
-      seenReactions: {},
-      lastUpdated: null,
-    };
+/** Reads the state file, returning null if it does not exist yet. */
+export async function loadState(path: string): Promise<State | null> {
+  let content: string;
+  try {
+    content = await readFile(path, "utf-8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
   }
 
-  async load(): Promise<void> {
-    let content: string;
-    try {
-      content = await readFile(this.statePath, "utf-8");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-      throw error;
-    }
-
-    // Starting fresh on a bad file would re-send every reaction, so stop instead.
-    const fixHint = "Fix or restore it from git history, or delete it to accept re-notification.";
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(content);
-    } catch (error) {
-      throw new Error(`State file ${this.statePath} is not valid JSON. ${fixHint}`, {
-        cause: error,
-      });
-    }
-    if (!isSeenReactionsState(parsed)) {
-      throw new Error(
-        `State file ${this.statePath} must have a seenReactions object of number arrays. ${fixHint}`,
-      );
-    }
-    this.state = parsed;
+  const fixHint = "Delete it to start over; existing reactions will be marked as seen.";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
+    throw new Error(`State file ${path} is not valid JSON. ${fixHint}`, { cause: error });
   }
-
-  async save(): Promise<void> {
-    this.state.lastUpdated = new Date().toISOString();
-    await writeFile(this.statePath, JSON.stringify(this.state, null, 2));
+  if (!isState(parsed)) {
+    throw new Error(`State file ${path} must have "seen" and "unread" arrays. ${fixHint}`);
   }
+  return parsed;
+}
 
-  findNewReactions(comment: Comment, reactions: Reaction[]): NewReaction[] {
-    const commentKey = String(comment.id);
-    const seenIds = new Set(this.state.seenReactions[commentKey] ?? []);
+/** Writes the state file atomically so a concurrent reader never sees a partial file. */
+export async function saveState(path: string, state: State): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const tempPath = `${path}.${process.pid}.tmp`;
+  await writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`);
+  await rename(tempPath, path);
+}
 
-    const newReactions: NewReaction[] = [];
+/**
+ * Adds reactions not seen before to the unread list.
+ *
+ * With no previous state, every current reaction is marked as seen so the first run does
+ * not report the whole history. "seen" holds only the current reactions, which keeps the
+ * file small: items outside the fetched window never come back into it.
+ */
+export function mergeReactions(previous: State | null, current: ReactionItem[]): State {
+  const seen = current.map((reaction) => reaction.id);
+  if (!previous) return { seen, unread: [] };
 
-    for (const reaction of reactions) {
-      // Skip reactions from the comment author (self-reactions)
-      if (reaction.user.login === comment.user.login) {
-        continue;
-      }
-
-      if (!seenIds.has(reaction.id)) {
-        newReactions.push({ reaction, comment });
-      }
-    }
-
-    return newReactions;
-  }
-
-  markAsSeen(comment: Comment, reactions: Reaction[]): void {
-    const commentKey = String(comment.id);
-    const existingIds = this.state.seenReactions[commentKey] ?? [];
-    const allIds = new Set([...existingIds, ...reactions.map((r) => r.id)]);
-    this.state.seenReactions[commentKey] = Array.from(allIds);
-  }
+  const seenBefore = new Set(previous.seen);
+  const fresh = current.filter((reaction) => !seenBefore.has(reaction.id));
+  const unread = [...fresh, ...previous.unread].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt),
+  );
+  return { seen, unread };
 }

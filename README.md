@@ -1,84 +1,48 @@
-# GitHub Reaction Email Notifier
+# GitHub Reaction Notifier
 
-Get email notifications when someone reacts to your GitHub comments.
+Shows reactions to your GitHub activity in the macOS menu bar. GitHub doesn't notify you about reactions, so this does.
 
-## How It Works
+## How it works
 
-A GitHub Action runs every 15 minutes and:
-1. Fetches your recent comments across all public repositories
-2. Checks each comment for reactions
-3. Sends you an email for any new reactions
-4. Tracks which reactions you've already been notified about
+[SwiftBar](https://swiftbar.app/) runs the plugin every 5 minutes while your Mac is awake. Each run sends one GraphQL query for your recent items and the reactions on them:
+
+- Your last 100 issue and pull request comments
+- Your last 50 issues and 50 pull requests
+- Your last 50 pull request reviews and their review comments
+- Your last 20 commit comments
+- Your last 20 discussions and 50 discussion comments
+
+New reactions from other people go in the menu. The menu bar shows how many are unread. Click a reaction to open it on GitHub. Click **Mark all as read** to clear the list.
+
+The query costs about 19 points of the 5,000-point hourly GraphQL rate limit.
+
+State is in `~/.local/state/github-reaction-notifier/state.json` (or `$XDG_STATE_HOME/github-reaction-notifier/state.json`). On the first run, the plugin marks all current reactions as seen, so it doesn't show your whole history. To start over, delete the file.
 
 ## Setup
 
-### 1. Create a Personal Access Token
-
-1. Go to https://github.com/settings/tokens
-2. Generate a new token (classic) with `public_repo` scope
-3. Copy the token for the next step
-
-### 2. Add Repository Secrets
-
-Go to your repo's **Settings → Secrets and variables → Actions** and add:
-
-| Secret | Description | Example |
-|--------|-------------|---------|
-| `GH_PAT` | Personal Access Token from step 2 | `ghp_xxxx...` |
-| `GH_USERNAME` | Your GitHub username | `octocat` |
-| `SMTP_HOST` | Your email provider's SMTP server | `smtp.gmail.com` |
-| `SMTP_PORT` | SMTP port | `587` |
-| `SMTP_USER` | SMTP username (usually your email) | `you@gmail.com` |
-| `SMTP_PASSWORD` | SMTP password or app password | `xxxx xxxx xxxx xxxx` |
-| `EMAIL_FROM` | Sender email address | `you@gmail.com` |
-| `EMAIL_TO` | Where to receive notifications | `you@gmail.com` |
-
-#### Gmail Setup
-
-If using Gmail:
-1. Enable 2-factor authentication on your Google account
-2. Go to https://myaccount.google.com/apppasswords
-3. Generate an app password for "Mail"
-4. Use that 16-character password as `SMTP_PASSWORD`
-
-### 3. Test the Workflow
-
-1. Go to **Actions** tab in your repository
-2. Click **Check Reactions** workflow
-3. Click **Run workflow**
-4. Check the workflow logs and your email
-
-## Configuration
-
-Edit `.github/workflows/check-reactions.yml` to change the schedule:
-
-```yaml
-schedule:
-  # Every 15 minutes (default)
-  - cron: "*/15 * * * *"
-
-  # Every hour
-  - cron: "0 * * * *"
-
-  # Every 6 hours
-  - cron: "0 */6 * * *"
-```
-
-## Local Development
+Requirements: Node 24 or later, the [GitHub CLI](https://cli.github.com/) logged in with `gh auth login`, and SwiftBar.
 
 ```bash
-# Install dependencies
-npm install
-
-# Build TypeScript
-npm run build
-
-# Run (requires environment variables)
-GITHUB_TOKEN=xxx GITHUB_USERNAME=xxx ... npm start
+brew install --cask swiftbar
+mkdir -p ~/.config/swiftbar
+ln -s "$PWD/plugin/github-reactions.5m.sh" ~/.config/swiftbar/
+defaults write com.ameba.SwiftBar PluginDirectory "$HOME/.config/swiftbar"
+open -a SwiftBar
 ```
 
-## Limitations
+The plugin gets a token from `gh auth token`. To use a different token, set `GITHUB_TOKEN`. With access to private repos, the token also covers your activity there.
 
-- Only monitors public repositories (private repos require additional token permissions)
-- GitHub Events API only returns ~90 days of activity
-- Rate limited to 5000 API requests/hour (more than sufficient for this use case)
+SwiftBar runs plugins with a minimal `PATH`. The plugin adds the fnm default Node, `/opt/homebrew/bin`, and `/usr/local/bin`. If Node or `gh` is somewhere else, edit `PATH` in `plugin/github-reactions.5m.sh`.
+
+To change how often it checks, rename the symlink, for example to `github-reactions.15m.sh`.
+
+## Development
+
+```bash
+npm install --ignore-scripts
+npm test            # node:test, runs the TypeScript directly
+npm run typecheck
+npm run lint
+npm run format
+npm start           # prints the SwiftBar menu (needs GITHUB_TOKEN)
+```

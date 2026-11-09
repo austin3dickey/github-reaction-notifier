@@ -1,21 +1,20 @@
 {
   "name": "github-reaction-notifier",
   "version": "1.0.0",
-  "description": "Get email notifications when someone reacts to your GitHub comments",
-  "main": "dist/index.js",
+  "description": "Show reactions to your GitHub activity in the macOS menu bar",
+  "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "test": "tsc && node --test 'dist/**/*.test.js'"
-  },
-  "dependencies": {
-    "@octokit/rest": "22.0.1",
-    "nodemailer": "10.2.1"
+    "start": "node src/index.ts",
+    "typecheck": "tsc",
+    "lint": "oxlint src",
+    "format": "oxfmt src",
+    "test": "node --test 'src/**/*.test.ts'"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
-    "@types/nodemailer": "8.0.2",
+    "oxfmt": "0.78.0",
+    "oxlint": "1.93.0",
     "typescript": "7.0.2"
   }
 }
